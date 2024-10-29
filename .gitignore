@@ -1,0 +1,21 @@
+# バックエンド
+backend/.env
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+
+# フロントエンド
+frontend/node_modules/
+frontend/.env
+frontend/.env.local
+frontend/build/
+
+# IDE/エディタ
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS関連
+.DS_Store
+Thumbs.db
