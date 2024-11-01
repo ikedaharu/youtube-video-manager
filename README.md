@@ -51,11 +51,12 @@ pip install -r requirements.txt
 ```
 
 4.環境変数の設定:
-```
+
 バックエンドディレクトリに.envファイルを作成
 以下の内容を追加:
 
-CopyYOUTUBE_API_KEY=あなたのYouTube API キー
+```
+YOUTUBE_API_KEY=あなたのYouTube API キー
 ```
 
 ## 使い方
