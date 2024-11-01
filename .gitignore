@@ -19,3 +19,11 @@ frontend/build/
 # OS関連
 .DS_Store
 Thumbs.db
+
+# その他
+/frontend/.pnp
+/frontend/.pnp.js
+/frontend/coverage
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
