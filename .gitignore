@@ -1,3 +1,5 @@
+!frontend/
+
 # バックエンド
 backend/.env
 backend/venv/
