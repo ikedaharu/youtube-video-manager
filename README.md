@@ -84,6 +84,5 @@ npm start
 ライセンス
 MIT
 
-## 作者
-
+作者  
 [@ikedaharu](https://github.com/ikedaharu)
