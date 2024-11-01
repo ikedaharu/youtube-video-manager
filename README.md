@@ -72,6 +72,7 @@ uvicorn main:app --reload
 ```
 cd frontend
 npm start
+```
 
 ブラウザで http://localhost:3000 にアクセス
 
