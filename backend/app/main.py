@@ -8,7 +8,7 @@ from datetime import datetime
 import logging
 import httpx
 from fastapi import HTTPException
-
+from urllib.parse import urlparse, parse_qs
 
 app = FastAPI()
 
@@ -37,9 +37,29 @@ class VideoInfo(BaseModel):
     published_at: str
     channel_title: str
 
+logger.setLevel(logging.DEBUG)  # デバッグレベルに設定
+
+def extract_video_id(video_url: str) -> str:
+    # URLを解析
+    parsed_url = urlparse(video_url)
+    if parsed_url.hostname in ['www.youtube.com', 'youtube.com']:
+        # 通常のYouTube URL
+        if parsed_url.path == '/watch':
+            return parse_qs(parsed_url.query).get('v', [None])[0]
+        elif '/live/' in parsed_url.path:
+            # ライブURL
+            return parsed_url.path.split('/')[-1]
+    elif parsed_url.hostname == 'youtu.be':
+        # 短縮URL
+        return parsed_url.path[1:]
+    return None
+
 async def get_video_info(video_url: str) -> VideoInfo:
-    # URLからビデオIDを抽出
-    video_id = video_url.split("v=")[-1].split("&")[0]
+    video_id = extract_video_id(video_url)
+    if not video_id:
+        raise HTTPException(status_code=400, detail="Invalid video URL")
+    
+    logger.debug("Extracted video ID: %s", video_id)
     
     async with httpx.AsyncClient() as client:
         response = await client.get(
@@ -51,7 +71,6 @@ async def get_video_info(video_url: str) -> VideoInfo:
             }
         )
         
-        # デバッグ用のロギング
         logger.debug("Response status code: %s", response.status_code)
         logger.debug("Response JSON: %s", response.json())
         
@@ -70,7 +89,7 @@ async def get_video_info(video_url: str) -> VideoInfo:
             published_at=video_data["publishedAt"],
             channel_title=video_data["channelTitle"]
         )
-
+        
 @app.post("/api/video-info")
 async def fetch_video_info(video_url: str):
     return await get_video_info(video_url)
