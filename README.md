@@ -33,10 +33,6 @@
 ## インストール
 
 1.リポジトリのクローン:
-```
-git clone [リポジトリURL]
-cd youtube-playlist-manager
-```
 
 2.フロントエンドのセットアップ:
 ```
