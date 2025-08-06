@@ -8,11 +8,15 @@ const App = () => {
   });
   const [selectedListId, setSelectedListId] = useState(null);
   const [newListName, setNewListName] = useState('');
-  const [videoUrl, setVideoUrl] = useState('');
+  const [videoUrls, setVideoUrls] = useState({});
 
   useEffect(() => {
     localStorage.setItem('videoLists', JSON.stringify(lists));
   }, [lists]);
+
+  const handleVideoUrlChange = (listId, url) => {
+    setVideoUrls(prev => ({ ...prev, [listId]: url }));
+  };
 
   const createList = () => {
     if (!newListName.trim()) return;
@@ -26,6 +30,7 @@ const App = () => {
   };
 
   const addVideo = async (listId) => {
+    const videoUrl = videoUrls[listId] || '';
     if (!videoUrl.trim()) return;
     
     try {
@@ -45,7 +50,7 @@ const App = () => {
         return list;
       }));
       
-      setVideoUrl('');
+      handleVideoUrlChange(listId, '');
     } catch (error) {
       console.error('Error fetching video info:', error);
       alert('動画情報の取得に失敗しました');
@@ -131,8 +136,12 @@ const App = () => {
               <div className="mb-3">
                 <input
                   type="text"
-                  value={videoUrl}
-                  onChange={(e) => setVideoUrl(e.target.value)}
+                  value={videoUrls[list.id] || ''}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    handleVideoUrlChange(list.id, e.target.value);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
                   placeholder="YouTube URL"
                   className="border border-gray-300 rounded p-2 w-full mb-2"
                 />
