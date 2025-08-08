@@ -1,243 +1,192 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { apiClient } from './lib/apiClient';
+import { useLocalStorage } from './hooks/useLocalStorage';
+import { ListSidebar } from './components/ListSidebar';
+import { AddVideoForm } from './components/AddVideoForm';
+import { Toolbar } from './components/Toolbar';
+import { VideoList } from './components/VideoList';
+import { Toast } from './components/Toast';
+import { ConfirmDialog } from './components/ConfirmDialog';
 
 const App = () => {
-  const [lists, setLists] = useState(() => {
-    const savedLists = localStorage.getItem('videoLists');
-    return savedLists ? JSON.parse(savedLists) : [];
-  });
-  const [selectedListId, setSelectedListId] = useState(null);
-  const [newListName, setNewListName] = useState('');
-  const [videoUrls, setVideoUrls] = useState({});
+  const [lists, setLists] = useLocalStorage('videoLists', []);
+  const [selectedListId, setSelectedListId] = useLocalStorage('selectedListId', null);
 
-  useEffect(() => {
-    localStorage.setItem('videoLists', JSON.stringify(lists));
-  }, [lists]);
+  const [searchQuery, setSearchQuery] = useLocalStorage('searchQuery', '');
+  const [sortKey, setSortKey] = useLocalStorage('sortKey', 'date'); // 'date' | 'channel'
+  const [sortOrder, setSortOrder] = useLocalStorage('sortOrder', 'desc'); // 'asc' | 'desc'
 
-  const handleVideoUrlChange = (listId, url) => {
-    setVideoUrls(prev => ({ ...prev, [listId]: url }));
+  const [toasts, setToasts] = useState([]);
+  const [confirm, setConfirm] = useState({ open: false, message: '', onConfirm: null, onCancel: null });
+
+  const selectedList = useMemo(() => lists.find((l) => l.id === selectedListId) || null, [lists, selectedListId]);
+
+  const addToast = (message, type = 'info', durationMs = 3000) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const toast = { id, message, type };
+    setToasts((prev) => [...prev, toast]);
+    if (durationMs > 0) {
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, durationMs);
+    }
   };
 
-  const createList = () => {
-    if (!newListName.trim()) return;
-    const newList = {
-      id: Date.now(),
-      name: newListName,
-      videos: []
-    };
+  const dismissToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id));
+
+  const onCreateList = (name) => {
+    const newList = { id: Date.now(), name, videos: [] };
     setLists([...lists, newList]);
-    setNewListName('');
+    setSelectedListId(newList.id);
+    addToast('リストを作成しました');
   };
 
-  const addVideo = async (listId) => {
-    const videoUrl = videoUrls[listId] || '';
-    if (!videoUrl.trim()) return;
-    
+  const onDeleteList = (listId) => {
+    const list = lists.find((l) => l.id === listId);
+    setConfirm({
+      open: true,
+      message: `リスト「${list?.name || ''}」を削除しますか？この操作は元に戻せません。`,
+      onConfirm: () => {
+        setLists(lists.filter((l) => l.id !== listId));
+        if (selectedListId === listId) setSelectedListId(null);
+        setConfirm({ open: false, message: '', onConfirm: null, onCancel: null });
+        addToast('リストを削除しました');
+      },
+      onCancel: () => setConfirm({ open: false, message: '', onConfirm: null, onCancel: null })
+    });
+  };
+
+  const handleAddVideo = async (url) => {
+    if (!selectedListId) {
+      addToast('リストを選択してください', 'error');
+      return;
+    }
     try {
-      const response = await apiClient.post('/api/video-info', null, {
-        params: { video_url: videoUrl }
-      });
-      
+      const response = await apiClient.post('/api/video-info', null, { params: { video_url: url } });
       const videoInfo = response.data;
-      
-      setLists(lists.map(list => {
-        if (list.id === listId) {
-          return {
-            ...list,
-            videos: [...list.videos, videoInfo]
-          };
-        }
-        return list;
-      }));
-      
-      handleVideoUrlChange(listId, '');
+
+      setLists(
+        lists.map((list) =>
+          list.id === selectedListId
+            ? { ...list, videos: [...list.videos, videoInfo] }
+            : list
+        )
+      );
+      addToast('動画を追加しました');
     } catch (error) {
       console.error('Error fetching video info:', error);
-      alert('動画情報の取得に失敗しました');
+      addToast('動画情報の取得に失敗しました', 'error');
+      throw error; // AddVideoForm側の状態復帰のため
     }
   };
 
-  const sortByDate = (listId, ascending = true) => {
-    setLists(lists.map(list => {
-      if (list.id === listId) {
-        const sortedVideos = [...list.videos].sort((a, b) => {
-          const dateA = new Date(a.published_at);
-          const dateB = new Date(b.published_at);
-          return ascending ? dateA - dateB : dateB - dateA;
-        });
-        return { ...list, videos: sortedVideos };
-      }
-      return list;
-    }));
-  };
-
-  const sortByChannel = (listId) => {
-    setLists(lists.map(list => {
-      if (list.id === listId) {
-        const sortedVideos = [...list.videos].sort((a, b) => 
-          a.channel_title.localeCompare(b.channel_title)
+  const requestDeleteVideo = (index) => {
+    const video = selectedList?.videos[index];
+    setConfirm({
+      open: true,
+      message: `「${video?.title || '動画'}」を削除しますか？`,
+      onConfirm: () => {
+        setLists(
+          lists.map((list) =>
+            list.id === selectedListId
+              ? { ...list, videos: list.videos.filter((_, i) => i !== index) }
+              : list
+          )
         );
-        return { ...list, videos: sortedVideos };
-      }
-      return list;
-    }));
+        setConfirm({ open: false, message: '', onConfirm: null, onCancel: null });
+        addToast('動画を削除しました');
+      },
+      onCancel: () => setConfirm({ open: false, message: '', onConfirm: null, onCancel: null })
+    });
   };
 
-  const deleteList = (listId) => {
-    setLists(lists.filter(list => list.id !== listId));
-    if (selectedListId === listId) {
-      setSelectedListId(null);
+  const sortedVideos = useMemo(() => {
+    if (!selectedList) return [];
+    const videos = [...selectedList.videos];
+    if (sortKey === 'date') {
+      videos.sort((a, b) => {
+        const dateA = new Date(a.published_at).getTime();
+        const dateB = new Date(b.published_at).getTime();
+        return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+      });
+    } else if (sortKey === 'channel') {
+      videos.sort((a, b) => a.channel_title.localeCompare(b.channel_title));
+      if (sortOrder === 'desc') videos.reverse();
     }
-  };
+    return videos;
+  }, [selectedList, sortKey, sortOrder]);
 
-  const deleteVideo = (listId, videoIndex) => {
-    setLists(lists.map(list => {
-      if (list.id === listId) {
-        const updatedVideos = list.videos.filter((_, index) => index !== videoIndex);
-        return { ...list, videos: updatedVideos };
-      }
-      return list;
-    }));
-  };
+  const filteredVideos = useMemo(() => {
+    if (!searchQuery) return sortedVideos;
+    const q = searchQuery.toLowerCase();
+    return sortedVideos.filter(
+      (v) => v.title.toLowerCase().includes(q) || v.channel_title.toLowerCase().includes(q)
+    );
+  }, [sortedVideos, searchQuery]);
+
+  const onToggleSortOrder = () => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+
+  useEffect(() => {
+    // 初回マウント時、リストが存在し選択がない場合は先頭を選択
+    if (!selectedListId && lists.length > 0) {
+      setSelectedListId(lists[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-3xl font-bold mb-6 text-gray-800">youtube-video-manager (動画管理アプリ)</h1>
-      
-      <div className="mb-6 bg-white p-4 rounded-lg shadow">
-        <input
-          type="text"
-          value={newListName}
-          onChange={(e) => setNewListName(e.target.value)}
-          placeholder="新しいリスト名"
-          className="border border-gray-300 rounded-lg p-2 mr-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <button
-          onClick={createList}
-          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition duration-200"
-        >
-          リストを作成
-        </button>
-      </div>
+    <div className="min-h-screen bg-gray-50 text-gray-900">
+      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur border-b border-gray-200">
+        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+          <h1 className="text-xl md:text-2xl font-bold">youtube-video-manager （動画管理アプリ）</h1>
+        </div>
+      </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-4">
-          {lists.map(list => (
-            <div
-              key={list.id}
-              className={`border rounded-lg p-4 cursor-pointer transition duration-200 ${
-                selectedListId === list.id 
-                  ? 'bg-blue-50 border-blue-500 shadow-lg' 
-                  : 'bg-white hover:shadow-md'
-              }`}
-              onClick={() => setSelectedListId(list.id)}
-            >
-              <h2 className="text-xl font-bold text-gray-800 mb-3">{list.name}</h2>
-              <div className="mb-3">
-                <input
-                  type="text"
-                  value={videoUrls[list.id] || ''}
-                  onChange={(e) => {
-                    e.stopPropagation();
-                    handleVideoUrlChange(list.id, e.target.value);
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                  placeholder="YouTube URL"
-                  className="border border-gray-300 rounded p-2 w-full mb-2"
-                />
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    addVideo(list.id);
-                  }}
-                  className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition duration-200"
-                >
-                  動画を追加
-                </button>
-              </div>
-              <div className="flex flex-wrap justify-between items-center">
-                <div className="space-x-2 mb-2 md:mb-0">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      sortByDate(list.id, true);
-                    }}
-                    className="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1 rounded text-sm"
-                  >
-                    日付順↑
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      sortByDate(list.id, false);
-                    }}
-                    className="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1 rounded text-sm"
-                  >
-                    日付順↓
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      sortByChannel(list.id);
-                    }}
-                    className="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1 rounded text-sm"
-                  >
-                    チャンネル順
-                  </button>
-                </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteList(list.id);
-                  }}
-                  className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm"
-                >
-                  リストを削除
-                </button>
-              </div>
-            </div>
-          ))}
+      <main className="container mx-auto px-4 py-6 grid grid-cols-1 md:grid-cols-[18rem_1fr] gap-6">
+        <div>
+          <ListSidebar
+            lists={lists}
+            selectedListId={selectedListId}
+            onSelectList={setSelectedListId}
+            onCreateList={onCreateList}
+            onDeleteList={onDeleteList}
+          />
         </div>
 
-        <div>
-          {selectedListId && (
-            <div className="border rounded-lg p-4 bg-white shadow">
-              <h2 className="text-xl font-bold mb-4 text-gray-800">
-                {lists.find(l => l.id === selectedListId)?.name} の動画一覧
-              </h2>
-              <div className="space-y-3">
-                {lists
-                  .find(l => l.id === selectedListId)
-                  ?.videos.map((video, index) => (
-                    <div key={index} className="border rounded p-3 hover:shadow-sm transition duration-200">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-grow">
-                          <h3 className="font-bold text-gray-800">{video.title}</h3>
-                          <p className="text-gray-600 text-sm">チャンネル: {video.channel_title}</p>
-                          <p className="text-gray-500 text-sm">投稿日: {new Date(video.published_at).toLocaleDateString()}</p>
-                          <a
-                            href={video.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-500 hover:text-blue-600 text-sm inline-block mt-1"
-                          >
-                            動画を開く
-                          </a>
-                        </div>
-                        <button
-                          onClick={() => deleteVideo(selectedListId, index)}
-                          className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs ml-2"
-                        >
-                          削除
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-              </div>
+        <div className="space-y-4">
+          {selectedList ? (
+            <>
+              <Toolbar
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                sortKey={sortKey}
+                onChangeSortKey={setSortKey}
+                sortOrder={sortOrder}
+                onToggleSortOrder={onToggleSortOrder}
+              />
+
+              <AddVideoForm onAdd={handleAddVideo} />
+
+              <section className="border rounded-lg p-4 bg-white">
+                <h2 className="text-lg font-semibold mb-3">{selectedList.name} の動画一覧</h2>
+                <VideoList videos={filteredVideos} onDelete={requestDeleteVideo} />
+              </section>
+            </>
+          ) : (
+            <div className="text-center text-gray-500 py-24 border rounded-lg bg-white">
+              左のサイドバーからリストを作成・選択してください。
             </div>
           )}
         </div>
-      </div>
+      </main>
+
+      <Toast toasts={toasts} onDismiss={dismissToast} />
+      <ConfirmDialog
+        open={confirm.open}
+        message={confirm.message}
+        onConfirm={confirm.onConfirm}
+        onCancel={confirm.onCancel}
+      />
     </div>
   );
 };
