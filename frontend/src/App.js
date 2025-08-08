@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { apiClient } from './lib/apiClient';
 
 const App = () => {
   const [lists, setLists] = useState(() => {
@@ -34,7 +34,7 @@ const App = () => {
     if (!videoUrl.trim()) return;
     
     try {
-      const response = await axios.post('http://localhost:8000/api/video-info', null, {
+      const response = await apiClient.post('/api/video-info', null, {
         params: { video_url: videoUrl }
       });
       
